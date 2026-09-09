@@ -1,12 +1,13 @@
 # MachineSense AI
 
-**Explainable Industrial Intelligence Platform for MSMEs**
+**Explainable Industrial Intelligence Platform for Indian Industry**
 *Predictive Maintenance · Digital Twin Simulation · Energy Optimization*
+*Smart India Hackathon 2026 · Software Edition*
 
 MachineSense AI is an Industry 4.0 platform that combines **IoT sensors**, **Explainable AI**,
-predictive maintenance, energy optimization and **digital-twin simulation** to help
-Micro, Small & Medium Enterprises (MSMEs) reduce downtime, maintenance cost and energy
-consumption — making advanced industrial intelligence affordable and accessible.
+predictive maintenance, energy optimization and **digital-twin simulation** to help Indian
+industrial units — from small workshops to large plants — reduce downtime, maintenance cost
+and energy consumption, making advanced industrial intelligence affordable and accessible.
 
 This repository contains a **fully working software prototype**: a FastAPI backend that
 simulates a fleet of industrial machines and runs the AI/analytics engine, plus a polished
@@ -28,7 +29,7 @@ real-time web dashboard.
 
 ---
 
-## 🖥️ Screenshots
+## 🖥️ Dashboard views
 
 The dashboard has six views: **Fleet Overview**, **Machine Analytics**, **Digital Twin
 Simulator**, **Energy Optimization**, **Alerts**, and **About**. Health gauges, live telemetry
@@ -48,8 +49,8 @@ Runs the FastAPI backend, which serves the dashboard and a live-updating simulat
 pip install -r backend/requirements.txt
 
 # 2. Start the server
-#    Windows:   run.bat
-#    macOS/Linux / any:
+#    Windows:      run.bat
+#    macOS/Linux:  ./run.sh     (or: python3 backend/main.py)
 python backend/main.py
 ```
 
@@ -134,8 +135,9 @@ Interactive API docs (Swagger UI) are auto-generated at **http://localhost:8000/
   deviations against each machine's own recent history (resistant to outliers).
 - **RUL / failure risk** — least-squares slope of the recent health trend is extrapolated to
   a failure threshold; failure probability is a logistic function of health + degradation speed.
-- **Energy** — average power draw vs. an ideal-load baseline yields efficiency, monthly cost,
-  recoverable waste and CO₂ (India grid factor ≈ 0.82 kg/kWh, tariff ≈ ₹8.5/kWh).
+- **Energy** — average power draw vs. the healthy-machine baseline yields efficiency, monthly
+  cost, recoverable waste and CO₂ (India grid factor ≈ 0.82 kg/kWh, tariff ≈ ₹8.5/kWh) — a
+  pristine machine shows ~zero waste, so savings reflect real degradation.
 - **Explainable AI** — the health penalty is attributed back to each sensor with a
   plain-language reason, so operators see *why*, not just a number.
 - **Digital Twin** — models each maintenance action as a reduction of sensor severities and
@@ -146,7 +148,8 @@ Interactive API docs (Swagger UI) are auto-generated at **http://localhost:8000/
 ## 🛠️ Technology stack
 
 **Hardware (target):** ESP32 + vibration / current / sound / temperature sensors
-**Software:** Python · FastAPI · React-ready frontend · PostgreSQL · Docker
+**Software (prototype):** Python · FastAPI · dependency-free JS dashboard
+**Software (production target):** React · PostgreSQL · Docker
 **AI:** Time-series analysis · Anomaly detection · ML health scoring · Digital-twin models
 
 > The prototype uses a pure-standard-library simulator so it runs anywhere Python does — the
@@ -157,12 +160,12 @@ Interactive API docs (Swagger UI) are auto-generated at **http://localhost:8000/
 ## 📈 Project snapshot
 
 - **Domain:** Industry 4.0 · AI · IoT · Digital Twin · Predictive Maintenance
-- **Estimated project cost:** ₹19,80,000
-- **Market:** 63M+ Indian MSMEs seeking affordable digital transformation
-- **Model:** SaaS subscription + optional hardware kit & support
+- **Event:** Smart India Hackathon 2026 (Software)
+- **Status:** Working full-stack prototype — live simulated fleet, real analytics
+- **Impact:** Predictive maintenance typically cuts downtime ~30%; energy optimization saves 10–20%
 
 See [`docs/ONE_PAGER.md`](docs/ONE_PAGER.md) and the pitch deck in `docs/` for the full story.
 
 ---
 
-*Built for the MSME Idea Hackathon.*
+*Built for Smart India Hackathon 2026.*

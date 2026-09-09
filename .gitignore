@@ -12,7 +12,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Build / QA artifacts
+# Build / QA artifacts (generated deck exports only — real docs stay tracked)
 docs/qa_slides/
-docs/*.pdf
+docs/MachineSenseAI_Pitch_Deck.pdf
 *.log

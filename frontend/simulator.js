@@ -24,7 +24,9 @@ const _cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 
 let _seed = 987654321;
 function rnd() { _seed = (_seed * 1103515245 + 12345) & 0x7fffffff; return _seed / 0x7fffffff; }
-function gauss(m, s) { return m + s * (rnd() + rnd() + rnd() - 1.5) * 1.2; }
+// Sum of 3 uniforms has std 0.5; scale by 2 so gauss(m, s) has true std s,
+// matching Python's rng.gauss noise level.
+function gauss(m, s) { return m + s * (rnd() + rnd() + rnd() - 1.5) * 2.0; }
 
 class Machine {
   constructor(id, name, type, location, degr, days) {
@@ -32,8 +34,15 @@ class Machine {
     this.degradation = degr; this.trueHealth = 0.8 + rnd() * 0.19;
     this.fault = null; this.faultSeverity = 0; this.running = true;
     this.history = []; this.runtime = days * (9 + rnd() * 6);
-    this.t0 = Date.now();
   }
+}
+
+// Latest reading taken while the machine was running (idle readings are
+// all-zero and would masquerade as perfect health). Mirrors ml.py.
+function lastRunningReading(m) {
+  for (let i = m.history.length - 1; i >= 0; i--)
+    if (m.history[i].running !== false) return m.history[i];
+  return m.history[m.history.length - 1] || {};
 }
 
 class LocalFleet {
@@ -47,15 +56,18 @@ class LocalFleet {
       ["M-005", "Hydraulic Press", "Press", "Shop Floor A", 0.00060, 900],
       ["M-006", "Cooling Pump", "Pump", "Utility Room", 0.00038, 540],
     ].forEach(s => { this.machines[s[0]] = new Machine(...s); });
-    for (let i = 0; i < 60; i++) this.tick(true);
+    this.simHours = 0;
+    // Warm-up uses the same 0.25h tick as live operation (mirrors Fleet.__init__).
+    for (let i = 0; i < 120; i++) this.tick();
     // Apply demo faults after warm-up so they start fresh, not flatlined.
     this.machines["M-002"].fault = "bearing_wear"; this.machines["M-002"].faultSeverity = 0.5;  this.machines["M-002"].trueHealth = 0.5;
     this.machines["M-005"].fault = "overheating";  this.machines["M-005"].faultSeverity = 0.28; this.machines["M-005"].trueHealth = 0.68;
     // Reflect the seeded faults in the latest readings straight away.
-    for (let i = 0; i < 8; i++) this.tick();
+    for (let i = 0; i < 16; i++) this.tick();
   }
 
   tick() {
+    this.simHours += 0.25;
     for (const m of Object.values(this.machines)) {
       if (m.running) {
         m.runtime += 0.25;
@@ -69,7 +81,8 @@ class LocalFleet {
   }
 
   _read(m) {
-    const out = { t: Math.round((Date.now() - m.t0) / 1000) };
+    // Simulated elapsed hours: monotone and uniform even during warm-up.
+    const out = { t: Math.round(this.simHours * 100) / 100, running: m.running };
     const deficit = 1 - Math.max(0, Math.min(1, m.trueHealth));
     for (const [s, cfg] of Object.entries(SENSORS)) {
       if (!m.running) { out[s] = (s === "temperature") ? 22 : 0; continue; }
@@ -83,7 +96,13 @@ class LocalFleet {
   }
 
   inject(id, f) { const m = this.machines[id]; if (!m || !FAULTS[f]) return false; m.fault = f; m.faultSeverity = Math.max(m.faultSeverity, 0.25); return true; }
-  repair(id) { const m = this.machines[id]; if (!m) return false; m.fault = null; m.faultSeverity = 0; m.trueHealth = 0.93; return true; }
+  repair(id) {
+    const m = this.machines[id]; if (!m) return false;
+    m.fault = null; m.faultSeverity = 0;
+    // Partial restore (+0.35) clamped into [0.90, 0.99] — mirrors Fleet.repair.
+    m.trueHealth = Math.min(0.99, Math.max(0.90, m.trueHealth + 0.35));
+    return true;
+  }
   power(id, r) { const m = this.machines[id]; if (!m) return false; m.running = r; return true; }
 }
 
@@ -97,7 +116,9 @@ function healthScore(r) {
 }
 const band = v => v >= 80 ? "healthy" : v >= 60 ? "watch" : v >= 40 ? "warning" : "critical";
 
-function healthSeries(m, n = 60) { return m.history.slice(-n).map(healthScore); }
+// Trend only over running readings; idle all-zero readings score 100 and
+// would corrupt the degradation slope. Mirrors ml.py.
+function healthSeries(m, n = 60) { return m.history.filter(h => h.running !== false).slice(-n).map(healthScore); }
 
 function predictRUL(m) {
   const series = healthSeries(m, 60);
@@ -125,12 +146,18 @@ function predictRUL(m) {
 
 function median(a) { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
 function detectAnomalies(m) {
-  const h = m.history; if (h.length < 12) return [];
-  const rec = h[h.length - 1], win = h.slice(Math.max(0, h.length - 41), h.length - 1);
+  // Idle readings are all-zero: exclude them from the baseline window, and
+  // don't run the test at all while the machine is stopped. Mirrors ml.py.
+  const h = m.history.filter(x => x.running !== false); if (h.length < 12) return [];
+  const rec = m.history[m.history.length - 1];
+  if (!rec || rec.running === false) return [];
+  const win = h.length > 41 ? h.slice(-40, -1) : h.slice(0, -1);
   const out = [];
   for (const [s, cfg] of Object.entries(SENSORS)) {
     const ser = win.map(w => w[s]).filter(v => v != null); if (ser.length < 8) continue;
-    const med = median(ser), mad = median(ser.map(v => Math.abs(v - med))) || 1e-6;
+    // MAD floored at a fraction of the baseline so a near-constant window
+    // can't produce astronomical z-scores. Mirrors ml.py.
+    const med = median(ser), mad = Math.max(median(ser.map(v => Math.abs(v - med))), 0.02 * cfg.baseline);
     const z = 0.6745 * (rec[s] - med) / mad;
     if (Math.abs(z) >= 3 && rec[s] > cfg.warn * 0.9)
       out.push({ sensor: s, value: rec[s], unit: cfg.unit, z_score: Math.round(z * 100) / 100, severity: Math.round(severity(s, rec[s]) * 100) / 100 });
@@ -156,7 +183,9 @@ function machineAlerts(m) {
 function energy(m) {
   const h = m.history.slice(-60); if (!h.length) return {};
   const p = h.map(x => x.power), avg = p.reduce((a, b) => a + b, 0) / p.length;
-  const ideal = RATED_POWER_KW * 0.72, waste = Math.max(0, avg - ideal);
+  // Ideal = the healthy-machine baseline, so a pristine machine shows ~zero
+  // waste and savings reflect real degradation only. Mirrors ml.py.
+  const ideal = SENSORS.power.baseline, waste = Math.max(0, avg - ideal);
   const eff = Math.round(Math.min(100, avg ? ideal / avg * 100 : 100) * 10) / 10;
   const daily = avg * 16, monthly = daily * 26, wasteMo = waste * 16 * 26;
   return {
@@ -205,18 +234,21 @@ function recommend(m, r, rul) {
   return recs;
 }
 
+const TWIN_EFFECTS = {
+  preventive_maintenance: Object.fromEntries(Object.keys(SENSORS).map(s => [s, 0.35])),
+  bearing_replacement: { vibration: 0.2, sound: 0.25, temperature: 0.6 },
+  lubrication: { temperature: 0.55, vibration: 0.7, sound: 0.6 },
+  cooling_service: { temperature: 0.25, current: 0.7, power: 0.75 },
+  electrical_service: { current: 0.3, power: 0.55, temperature: 0.7 },
+  no_action: Object.fromEntries(Object.keys(SENSORS).map(s => [s, 1.0])),
+};
+
 function twin(m, action) {
-  const r = { ...(m.history[m.history.length - 1] || {}) };
+  if (!TWIN_EFFECTS[action]) return null;  // mirrors the backend's 400
+  const r = { ...lastRunningReading(m) };
+  delete r.running;
   const before = healthScore(r), bRul = predictRUL(m), bEnergy = energy(m);
-  const effects = {
-    preventive_maintenance: Object.fromEntries(Object.keys(SENSORS).map(s => [s, 0.35])),
-    bearing_replacement: { vibration: 0.2, sound: 0.25, temperature: 0.6 },
-    lubrication: { temperature: 0.55, vibration: 0.7, sound: 0.6 },
-    cooling_service: { temperature: 0.25, current: 0.7, power: 0.75 },
-    electrical_service: { current: 0.3, power: 0.55, temperature: 0.7 },
-    no_action: Object.fromEntries(Object.keys(SENSORS).map(s => [s, 1.0])),
-  };
-  const f = effects[action] || {};
+  const f = TWIN_EFFECTS[action];
   const proj = {};
   for (const [s, c] of Object.entries(SENSORS)) proj[s] = Math.round((c.baseline + ((r[s] ?? c.baseline) - c.baseline) * (f[s] ?? 1)) * 100) / 100;
   const after = healthScore(proj), gain = Math.max(0, after - before);
@@ -235,7 +267,9 @@ const _fleet = new LocalFleet();
 setInterval(() => _fleet.tick(), 2000);
 
 function summary(m) {
-  const r = m.history[m.history.length - 1] || {}; const sc = healthScore(r);
+  // Score the last RUNNING reading so a stopped machine can't fake perfect
+  // health. Mirrors main.py._machine_summary.
+  const r = lastRunningReading(m); const sc = healthScore(r);
   return { id: m.id, name: m.name, type: m.type, location: m.location, running: m.running,
     health: sc, band: band(sc), fault: m.fault ? FAULTS[m.fault].label : null, runtime_hours: Math.round(m.runtime) };
 }
@@ -260,14 +294,26 @@ const LocalAPI = {
   },
   machine(id) {
     const m = _fleet.machines[id]; if (!m) return null;
-    const r = m.history[m.history.length - 1] || {}; const rul = predictRUL(m);
+    // Live values show what sensors read right now; scoring/XAI/recs use the
+    // last running reading. Mirrors main.py.machine_detail.
+    const r = m.history[m.history.length - 1] || {};
+    const basis = lastRunningReading(m);
+    const rul = predictRUL(m);
     return { ...summary(m),
       sensors: Object.fromEntries(Object.entries(SENSORS).map(([s, c]) => [s, { value: r[s], unit: c.unit, baseline: c.baseline, warn: c.warn, critical: c.critical }])),
-      reading: r, prediction: rul, explanation: explain(r), anomalies: detectAnomalies(m), energy: energy(m), recommendations: recommend(m, r, rul) };
+      reading: r, prediction: rul, explanation: explain(basis), anomalies: detectAnomalies(m), energy: energy(m), recommendations: recommend(m, basis, rul) };
   },
   history(id, n = 60) {
     const m = _fleet.machines[id]; if (!m) return { points: [] };
-    return { machine_id: id, points: m.history.slice(-n).map(h => ({ t: h.t, ...Object.fromEntries(Object.keys(SENSORS).map(s => [s, h[s]])), health: healthScore(h) })) };
+    // Carry the last running health forward through stopped stretches so the
+    // trend line stays honest. Mirrors main.py.machine_history.
+    let lastHealth = null;
+    const points = m.history.slice(-Math.max(1, n)).map(h => {
+      if (h.running !== false) lastHealth = healthScore(h);
+      return { t: h.t, ...Object.fromEntries(Object.keys(SENSORS).map(s => [s, h[s]])),
+        health: lastHealth != null ? lastHealth : healthScore(h) };
+    });
+    return { machine_id: id, points };
   },
   alerts() {
     const out = [];
@@ -285,7 +331,7 @@ const LocalAPI = {
   repair(id) { return { ok: _fleet.repair(id) }; },
   power(id, r) { return { ok: _fleet.power(id, r) }; },
   meta() { return { sensors: SENSORS, faults: Object.fromEntries(Object.entries(FAULTS).map(([k, v]) => [k, v.label])),
-    twin_actions: ["preventive_maintenance", "bearing_replacement", "lubrication", "cooling_service", "electrical_service", "no_action"] }; },
+    twin_actions: Object.keys(TWIN_EFFECTS) }; },
 };
 
 window.LocalAPI = LocalAPI;

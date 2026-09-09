@@ -113,34 +113,34 @@ text(s, 0.9, 1.55, 0.9, 0.9, [[R("⚙", 34, BG)]], align=PP_ALIGN.CENTER, anchor
 text(s, 2.05, 1.5, 9, 1.1, [[R("MachineSense ", 52, TEXT, True, False, HEAD),
                              R("AI", 52, CYAN, True, False, HEAD)]], anchor=MSO_ANCHOR.MIDDLE)
 text(s, 0.95, 2.95, 11, 0.7,
-     [[R("Explainable Industrial Intelligence for MSMEs", 24, MUTED, False, True, HEAD)]])
+     [[R("Explainable Industrial Intelligence for Indian Industry", 24, MUTED, False, True, HEAD)]])
 text(s, 0.95, 3.75, 11.4, 0.9,
      [[R("Predictive maintenance · Digital-twin simulation · Energy optimization — powered by IoT and Explainable AI",
          15, FAINT)]])
 # stat strip
-stats = [("₹19.8L", "Project Cost", CYAN), ("63M+", "Target MSMEs", GREEN),
-         ("Industry 4.0", "Domain", PURPLE), ("SaaS + Kit", "Business Model", AMBER)]
+stats = [("SIH 2026", "Software Edition", CYAN), ("63M+", "Factories & Workshops", GREEN),
+         ("Industry 4.0", "Domain", PURPLE), ("Working", "Prototype Status", AMBER)]
 x = 0.95
 for val, lab, col in stats:
     rect(s, x, 4.95, 2.75, 1.15, fill=BG2, line=BORDER)
     text(s, x + 0.25, 5.12, 2.4, 0.5, [[R(val, 24, col, True, False, HEAD)]])
     text(s, x + 0.25, 5.62, 2.4, 0.4, [[R(lab.upper(), 10.5, FAINT, True)]])
     x += 2.95
-text(s, 0.95, 6.75, 11, 0.4, [[R("MSME Idea Hackathon  ·  Industry 4.0 · AI · IoT · Digital Twin", 12, FAINT, True)]])
+text(s, 0.95, 6.75, 11, 0.4, [[R("Smart India Hackathon 2026  ·  Industry 4.0 · AI · IoT · Digital Twin", 12, FAINT, True)]])
 
 # =====================================================================
 # 2 — PROBLEM
 # =====================================================================
 s = slide(BG)
 tag(s, 0.9, 0.7, "THE PROBLEM", RED, w=1.9)
-text(s, 0.9, 1.15, 11.5, 0.9, [[R("MSMEs are flying blind on machine health", 34, TEXT, True, False, HEAD)]])
+text(s, 0.9, 1.15, 11.5, 0.9, [[R("Indian factories are flying blind on machine health", 34, TEXT, True, False, HEAD)]])
 text(s, 0.9, 2.05, 11.5, 0.6,
      [[R("Small and medium manufacturers keep the country running — but can't afford the Industry 4.0 tools that prevent costly breakdowns.", 15, MUTED)]])
 
 cards = [
     ("Unplanned Downtime", "Sudden machine failures halt production lines with no warning, missing deadlines and orders.", RED),
     ("High Maintenance Cost", "Reactive, fix-it-when-it-breaks maintenance is far costlier than planned intervention.", ORANGE),
-    ("Energy Wastage", "Inefficient, ageing machines silently burn excess power — a cost few MSMEs even measure.", AMBER),
+    ("Energy Wastage", "Inefficient, ageing machines silently burn excess power — a cost few factories even measure.", AMBER),
     ("No Affordable Industry 4.0", "Existing predictive-maintenance suites are enterprise-priced and out of reach.", PURPLE),
 ]
 x, y = 0.9, 2.95
@@ -270,7 +270,7 @@ text(s, 7.3, 3.7, 5.1, 2.4,
       [R("• Quantify ROI of every action", 13, TEXT)]], space=1.15)
 
 text(s, 0.9, 6.55, 11.8, 0.5,
-     [[R("Affordable · MSME-first · Explainable · Twin-validated — an integrated platform, not a point tool.",
+     [[R("Affordable · India-first · Explainable · Twin-validated — an integrated platform, not a point tool.",
          13, FAINT, False, True)]])
 
 # =====================================================================
@@ -304,7 +304,7 @@ s = slide(BG)
 tag(s, 0.9, 0.7, "MARKET OPPORTUNITY", GREEN, w=2.5)
 text(s, 0.9, 1.15, 11.5, 0.9, [[R("A vast, underserved market", 32, TEXT, True, False, HEAD)]])
 
-big = [("63M+", "MSMEs in India seeking\naffordable digitisation", CYAN),
+big = [("63M+", "factories & workshops seeking\naffordable digitisation", CYAN),
        ("~30%", "typical downtime reduction\nfrom predictive maintenance", GREEN),
        ("10-20%", "energy savings unlocked\nby continuous optimization", AMBER)]
 x, y = 0.9, 2.45
@@ -375,7 +375,7 @@ text(s, 1.2, yy + 0.0, 6, 0.4, [[R("Total   ", 15, TEXT, True), R("₹19,80,000"
 rect(s, 7.7, 2.3, 5.0, 4.35, fill=BG2, line=BORDER)
 text(s, 8.0, 2.5, 4.4, 0.5, [[R("Roadmap & Future Scope", 16, TEXT, True, False, HEAD)]])
 phases = [("Now", "Working prototype: dashboard, AI engine, digital twin", CYAN),
-          ("Next", "Field pilots with MSMEs, hardware kit, mobile app", SKY),
+          ("Next", "Field pilots with industry partners, hardware kit, mobile app", SKY),
           ("Later", "Robotics integration, voice assistant, autonomous scheduling", PURPLE),
           ("Vision", "Federated learning across factories & clusters", GREEN)]
 yy = 3.2
@@ -392,7 +392,7 @@ s = slide(BG)
 rect(s, 0.9, 1.7, 0.85, 0.85, fill=CYAN, radius=True)
 text(s, 0.9, 1.7, 0.85, 0.85, [[R("⚙", 30, BG)]], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
 text(s, 2.0, 1.62, 10, 1.0, [[R("Making Industry 4.0 affordable", 40, TEXT, True, False, HEAD)]])
-text(s, 2.0, 2.5, 10.5, 0.6, [[R("for every MSME.", 40, CYAN, True, False, HEAD)]])
+text(s, 2.0, 2.5, 10.5, 0.6, [[R("for every Indian factory.", 40, CYAN, True, False, HEAD)]])
 text(s, 0.95, 3.75, 11.4, 0.9,
      [[R("MachineSense AI turns low-cost sensors into predictive, explainable, twin-validated machine intelligence — reducing downtime, cost and energy for the businesses that need it most.",
          15, MUTED)]])
@@ -400,14 +400,14 @@ text(s, 0.95, 3.75, 11.4, 0.9,
 # CTA strip
 labels = [("Live Demo", "Interactive dashboard prototype", CYAN),
           ("Full Stack", "FastAPI + AI engine + web UI", GREEN),
-          ("Ready to Pilot", "Seeking partners & MSMEs", AMBER)]
+          ("Ready to Pilot", "Seeking industry partners", AMBER)]
 x = 0.95
 for t, d, col in labels:
     rect(s, x, 5.0, 3.8, 1.2, fill=PANEL, line=BORDER)
     text(s, x + 0.3, 5.18, 3.3, 0.45, [[R(t, 16, col, True, False, HEAD)]])
     text(s, x + 0.3, 5.66, 3.3, 0.45, [[R(d, 12, MUTED)]])
     x += 3.98
-text(s, 0.95, 6.65, 11, 0.4, [[R("Thank you  ·  MachineSense AI  ·  MSME Idea Hackathon", 13, FAINT, True)]])
+text(s, 0.95, 6.65, 11, 0.4, [[R("Thank you  ·  MachineSense AI  ·  Smart India Hackathon 2026", 13, FAINT, True)]])
 
 import os
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MachineSenseAI_Pitch_Deck.pptx")

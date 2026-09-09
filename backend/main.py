@@ -13,10 +13,11 @@ Then open http://localhost:8000
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,17 +37,25 @@ async def lifespan(app: FastAPI):
     """Background task: advance the simulation continuously so data is live."""
     async def loop():
         while True:
-            FLEET.tick(dt_hours=0.25)
+            try:
+                FLEET.tick(dt_hours=0.25)
+            except Exception:
+                # One bad tick must not silently kill the live-data stream.
+                logging.exception("simulation tick failed")
             await asyncio.sleep(2.0)  # one reading every 2 seconds
 
     task = asyncio.create_task(loop())
     yield
     task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(
     title="MachineSense AI API",
-    description="Explainable Industrial Intelligence Platform for MSMEs",
+    description="Explainable Industrial Intelligence Platform for Indian Industry — Smart India Hackathon 2026",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -61,7 +70,9 @@ app.add_middleware(
 # Helpers
 # ---------------------------------------------------------------------------
 def _machine_summary(m) -> dict:
-    reading = m.history[-1] if m.history else {}
+    # Score the last RUNNING reading: a stopped machine reads all zeros, which
+    # would masquerade as perfect health and hide an active fault.
+    reading = ml.last_running_reading(m)
     score = ml.health_score(reading) if reading else 100.0
     return {
         "id": m.id, "name": m.name, "type": m.type, "location": m.location,
@@ -83,8 +94,10 @@ def _get(machine_id: str):
 # ---------------------------------------------------------------------------
 # API routes
 # ---------------------------------------------------------------------------
+# NOTE: handlers are async so they run on the event loop, serialized with the
+# lifespan tick task — no threadpool races on the shared FLEET state.
 @app.get("/api/overview")
-def overview():
+async def overview():
     machines = [_machine_summary(m) for m in FLEET.machines.values()]
     n = len(machines)
     avg_health = round(sum(x["health"] for x in machines) / n, 1) if n else 0
@@ -113,15 +126,18 @@ def overview():
 
 
 @app.get("/api/machines")
-def list_machines():
+async def list_machines():
     return [_machine_summary(m) for m in FLEET.machines.values()]
 
 
 @app.get("/api/machines/{machine_id}")
-def machine_detail(machine_id: str):
+async def machine_detail(machine_id: str):
     m = _get(machine_id)
+    # Live values show what the sensors read right now (zeros when stopped);
+    # scoring/XAI/recommendations use the last running reading so a stopped
+    # machine keeps its true diagnosis.
     reading = m.history[-1] if m.history else {}
-    score = ml.health_score(reading)
+    basis = ml.last_running_reading(m)
     rul = ml.predict_rul(m)
     return {
         **_machine_summary(m),
@@ -130,28 +146,33 @@ def machine_detail(machine_id: str):
                     for s, cfg in SENSORS.items()},
         "reading": reading,
         "prediction": rul,
-        "explanation": ml.explain(reading),
+        "explanation": ml.explain(basis),
         "anomalies": ml.detect_anomalies(m),
         "energy": ml.energy_analysis(m),
-        "recommendations": ml.recommend(m, reading, rul),
+        "recommendations": ml.recommend(m, basis, rul),
     }
 
 
 @app.get("/api/machines/{machine_id}/history")
-def machine_history(machine_id: str, n: int = 60):
+async def machine_history(machine_id: str, n: int = Query(60, ge=1, le=240)):
     m = _get(machine_id)
     hist = list(m.history)[-n:]
-    return {
-        "machine_id": machine_id,
-        "points": [
-            {"t": h.get("t"), **{s: h.get(s) for s in SENSORS}, "health": ml.health_score(h)}
-            for h in hist
-        ],
-    }
+    # Idle readings would score a fake 100: carry the last running health
+    # forward through stopped stretches so the trend line stays honest.
+    points, last_health = [], None
+    for h in hist:
+        if h.get("running", True):
+            last_health = ml.health_score(h)
+        points.append({
+            "t": h.get("t"),
+            **{s: h.get(s) for s in SENSORS},
+            "health": last_health if last_health is not None else ml.health_score(h),
+        })
+    return {"machine_id": machine_id, "points": points}
 
 
 @app.get("/api/alerts")
-def alerts():
+async def alerts():
     out = []
     for m in FLEET.machines.values():
         for a in ml.machine_alerts(m):
@@ -176,8 +197,10 @@ class TwinRequest(BaseModel):
 
 
 @app.post("/api/machines/{machine_id}/twin")
-def run_twin(machine_id: str, req: TwinRequest):
+async def run_twin(machine_id: str, req: TwinRequest):
     m = _get(machine_id)
+    if req.action not in ml.TWIN_EFFECTS:
+        raise HTTPException(400, f"Unknown twin action {req.action!r}. Valid: {ml.TWIN_ACTIONS}")
     return ml.digital_twin(m, req.action)
 
 
@@ -186,14 +209,16 @@ class FaultRequest(BaseModel):
 
 
 @app.post("/api/machines/{machine_id}/inject-fault")
-def inject_fault(machine_id: str, req: FaultRequest):
-    if not FLEET.inject_fault(machine_id, req.fault):
-        raise HTTPException(400, "Invalid machine or fault type")
+async def inject_fault(machine_id: str, req: FaultRequest):
+    _get(machine_id)  # 404 for an unknown machine, like every sibling endpoint
+    if req.fault not in FAULT_PROFILES:
+        raise HTTPException(400, f"Unknown fault type {req.fault!r}. Valid: {list(FAULT_PROFILES)}")
+    FLEET.inject_fault(machine_id, req.fault)
     return {"ok": True, "machine_id": machine_id, "fault": req.fault}
 
 
 @app.post("/api/machines/{machine_id}/repair")
-def repair(machine_id: str):
+async def repair(machine_id: str):
     if not FLEET.repair(machine_id):
         raise HTTPException(404, "Machine not found")
     return {"ok": True, "machine_id": machine_id}
@@ -204,21 +229,19 @@ class RunRequest(BaseModel):
 
 
 @app.post("/api/machines/{machine_id}/power")
-def set_power(machine_id: str, req: RunRequest):
+async def set_power(machine_id: str, req: RunRequest):
     if not FLEET.set_running(machine_id, req.running):
         raise HTTPException(404, "Machine not found")
     return {"ok": True, "machine_id": machine_id, "running": req.running}
 
 
 @app.get("/api/meta")
-def meta():
+async def meta():
     return {
         "sensors": SENSORS,
         "faults": {k: v["label"] for k, v in FAULT_PROFILES.items()},
-        "twin_actions": [
-            "preventive_maintenance", "bearing_replacement", "lubrication",
-            "cooling_service", "electrical_service", "no_action",
-        ],
+        # Single source of truth: whatever the twin engine actually models.
+        "twin_actions": ml.TWIN_ACTIONS,
     }
 
 
@@ -227,7 +250,7 @@ def meta():
 # ---------------------------------------------------------------------------
 if os.path.isdir(FRONTEND_DIR):
     @app.get("/")
-    def index():
+    async def index():
         return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
     app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="frontend")
@@ -235,4 +258,6 @@ if os.path.isdir(FRONTEND_DIR):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    # Bind localhost like run.bat/run.sh do — the API has wide-open CORS and
+    # should not be exposed on every interface by default.
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
