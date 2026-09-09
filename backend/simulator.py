@@ -1,8 +1,8 @@
 """
 MachineSense AI - Industrial Machine & Sensor Simulator
 --------------------------------------------------------
-Simulates a fleet of MSME industrial machines and their IoT sensor streams
-(vibration, temperature, current, sound, power, rpm). Each machine has an
+Simulates a fleet of industrial machines and their IoT sensor streams
+(vibration, temperature, current, sound, power). Each machine has an
 internal "true health" that degrades over time and can be pushed into fault
 states for live demos. Sensor readings are derived from the true health plus
 realistic noise, so the AI engine (ml.py) has something meaningful to analyse.
@@ -78,18 +78,20 @@ class Fleet:
 
     def __init__(self, seed: int = 42):
         self.rng = random.Random(seed)
-        self._t0 = time.time()
+        self._sim_hours = 0.0
         self.machines: Dict[str, Machine] = {}
         self._build_fleet()
         # Pre-seed history on healthy machines so charts are populated at load.
-        for _ in range(60):
-            self.tick(dt_hours=0.5, quiet=True)
+        # Warm-up uses the same 0.25 h tick as live operation so trend maths
+        # (RUL slope, hours-per-tick) sees a uniform time base.
+        for _ in range(120):
+            self.tick()
         # Apply demo faults AFTER warm-up so they start fresh, not flatlined.
         self._seed_faults()
         # Run a few more ticks so the seeded faults are reflected in the
         # latest readings immediately (no healthy-looking cold-start window).
-        for _ in range(8):
-            self.tick(dt_hours=0.5, quiet=True)
+        for _ in range(16):
+            self.tick()
 
     def _build_fleet(self):
         specs = [
@@ -124,8 +126,9 @@ class Fleet:
     # ------------------------------------------------------------------
     # Simulation step
     # ------------------------------------------------------------------
-    def tick(self, dt_hours: float = 0.25, quiet: bool = False):
+    def tick(self, dt_hours: float = 0.25):
         """Advance every running machine by dt_hours and record a reading."""
+        self._sim_hours += dt_hours
         for m in self.machines.values():
             if not m.running:
                 self._record(m, running=False)
@@ -146,7 +149,10 @@ class Fleet:
 
     def _record(self, m: Machine, running: bool):
         reading = self._read_sensors(m, running)
-        reading["t"] = round(time.time() - self._t0, 1)
+        # Simulated elapsed hours: monotone and uniform even during the fast
+        # warm-up loop (wall-clock would stamp all warm-up points identically).
+        reading["t"] = round(self._sim_hours, 2)
+        reading["running"] = running
         m.history.append(reading)
 
     def _read_sensors(self, m: Machine, running: bool) -> dict:
@@ -193,8 +199,8 @@ class Fleet:
             return False
         m.fault = None
         m.fault_severity = 0.0
-        m.true_health = min(1.0, m.true_health + 0.35)
-        m.true_health = min(0.99, max(m.true_health, 0.90))
+        # Partial restore (+0.35), never below a solid 0.90 nor a suspicious 1.0.
+        m.true_health = min(0.99, max(0.90, m.true_health + 0.35))
         return True
 
     def set_running(self, machine_id: str, running: bool) -> bool:

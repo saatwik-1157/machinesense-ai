@@ -1,12 +1,12 @@
 /* ============================================================
    MachineSense AI - lightweight canvas charts (no dependencies)
-   High-DPI aware. Provides: lineChart, healthGauge, donut, hbars
+   High-DPI aware. Provides: lineChart, healthGauge, donut
    ============================================================ */
 const CSS = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 function setupCanvas(canvas, cssHeight) {
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth || canvas.parentElement.clientWidth;
+  const w = canvas.clientWidth || canvas.parentElement.clientWidth || 300;
   const h = cssHeight || canvas.clientHeight || 200;
   canvas.style.height = h + "px";
   canvas.width = Math.max(1, Math.floor(w * dpr));
@@ -43,12 +43,13 @@ function lineChart(canvas, series, opts = {}) {
   ctx.strokeStyle = CSS("--border-soft");
   ctx.lineWidth = 1;
   const rows = 4;
+  const dec = (max - min) < 10 ? 1 : 0;  // one precision for the whole axis
   for (let r = 0; r <= rows; r++) {
     const val = min + (max - min) * (r / rows);
     const y = Y(val);
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
     ctx.textAlign = "right"; ctx.textBaseline = "middle";
-    ctx.fillText(val.toFixed(val < 10 ? 1 : 0), padL - 7, y);
+    ctx.fillText(val.toFixed(dec), padL - 7, y);
   }
 
   // threshold bands (optional)
@@ -88,9 +89,6 @@ function healthGauge(canvas, value, opts = {}) {
   const size = opts.size || 92;
   canvas.style.width = size + "px";
   const { ctx } = setupCanvas(canvas, size);
-  canvas.width = size * (window.devicePixelRatio || 1);
-  const dpr = window.devicePixelRatio || 1;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, size, size);
   const cx = size / 2, cy = size / 2, r = size / 2 - 8;
   const start = Math.PI * 0.75, end = Math.PI * 2.25;

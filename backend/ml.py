@@ -20,12 +20,21 @@ from __future__ import annotations
 import statistics
 from typing import Dict, List
 
-from simulator import SENSORS, RATED_POWER_KW, FAULT_PROFILES, Machine
+from simulator import SENSORS, FAULT_PROFILES, Machine
 
 
 # ---------------------------------------------------------------------------
 # Health score
 # ---------------------------------------------------------------------------
+def last_running_reading(machine: Machine) -> dict:
+    """Latest reading taken while the machine was running (idle readings are
+    all-zero and would masquerade as perfect health)."""
+    for h in reversed(machine.history):
+        if h.get("running", True):
+            return h
+    return machine.history[-1] if machine.history else {}
+
+
 def _sensor_severity(sensor: str, value: float) -> float:
     """0.0 = healthy baseline, 1.0 = at/over critical threshold."""
     cfg = SENSORS[sensor]
@@ -61,10 +70,14 @@ def health_band(score: float) -> str:
 # Anomaly detection (robust z-score against the machine's recent history)
 # ---------------------------------------------------------------------------
 def detect_anomalies(machine: Machine) -> List[dict]:
-    hist = list(machine.history)
+    # Idle readings are all-zero: exclude them from the baseline window, and
+    # don't run the test at all while the machine is stopped.
+    hist = [h for h in machine.history if h.get("running", True)]
     if len(hist) < 12:
         return []
-    recent = hist[-1]
+    recent = machine.history[-1] if machine.history else {}
+    if not recent.get("running", True):
+        return []
     window = hist[-40:-1] if len(hist) > 41 else hist[:-1]
     anomalies = []
     for s, cfg in SENSORS.items():
@@ -72,8 +85,10 @@ def detect_anomalies(machine: Machine) -> List[dict]:
         if len(series) < 8:
             continue
         med = statistics.median(series)
-        # Median absolute deviation -> robust to outliers.
-        mad = statistics.median([abs(x - med) for x in series]) or 1e-6
+        # Median absolute deviation -> robust to outliers. Floor the MAD at a
+        # small fraction of the baseline so a near-constant window can't
+        # produce astronomical z-scores.
+        mad = max(statistics.median([abs(x - med) for x in series]), 0.02 * cfg["baseline"])
         z = 0.6745 * (recent[s] - med) / mad
         if abs(z) >= 3.0 and recent[s] > cfg["warn"] * 0.9:
             anomalies.append({
@@ -125,7 +140,10 @@ def machine_alerts(machine: Machine) -> List[dict]:
 # Remaining Useful Life + failure probability
 # ---------------------------------------------------------------------------
 def _health_series(machine: Machine, n: int = 60) -> List[float]:
-    return [health_score(h) for h in list(machine.history)[-n:]]
+    # Trend only over running readings; idle all-zero readings score 100 and
+    # would corrupt the degradation slope.
+    running = [h for h in machine.history if h.get("running", True)]
+    return [health_score(h) for h in running[-n:]]
 
 
 def predict_rul(machine: Machine) -> dict:
@@ -186,8 +204,9 @@ def energy_analysis(machine: Machine, tariff_inr_per_kwh: float = 8.5) -> dict:
     powers = [h["power"] for h in hist if "power" in h]
     avg_power = sum(powers) / len(powers) if powers else 0.0
 
-    # Ideal power draw for the current load ~ rated * expected utilisation.
-    ideal = RATED_POWER_KW * 0.72
+    # Ideal power draw = the healthy-machine baseline, so a pristine machine
+    # shows ~zero waste and savings reflect real degradation only.
+    ideal = SENSORS["power"]["baseline"]
     waste_kw = max(0.0, avg_power - ideal)
     efficiency = round(min(100.0, (ideal / avg_power * 100.0) if avg_power else 100.0), 1)
 
@@ -289,27 +308,35 @@ def recommend(machine: Machine, reading: dict, rul: dict) -> List[dict]:
 # ---------------------------------------------------------------------------
 # Digital Twin - simulate the effect of a maintenance action before doing it
 # ---------------------------------------------------------------------------
+# Each action is modelled as a multiplicative reduction of sensor severities.
+TWIN_EFFECTS = {
+    "preventive_maintenance": {s: 0.35 for s in SENSORS},
+    "bearing_replacement": {"vibration": 0.2, "sound": 0.25, "temperature": 0.6},
+    "lubrication": {"temperature": 0.55, "vibration": 0.7, "sound": 0.6},
+    "cooling_service": {"temperature": 0.25, "current": 0.7, "power": 0.75},
+    "electrical_service": {"current": 0.3, "power": 0.55, "temperature": 0.7},
+    "no_action": {s: 1.0 for s in SENSORS},
+}
+TWIN_ACTIONS = list(TWIN_EFFECTS)
+
+
 def digital_twin(machine: Machine, action: str) -> dict:
     """
     Project the machine's health, RUL and energy AFTER a chosen action, without
     touching the real asset. Lets operators validate decisions first.
+
+    Raises ValueError for an action not in TWIN_EFFECTS.
     """
-    hist = list(machine.history)
-    reading = dict(hist[-1]) if hist else {s: SENSORS[s]["baseline"] for s in SENSORS}
+    if action not in TWIN_EFFECTS:
+        raise ValueError(f"Unknown twin action: {action!r}")
+
+    reading = dict(last_running_reading(machine)) or {s: SENSORS[s]["baseline"] for s in SENSORS}
+    reading.pop("running", None)
     before_score = health_score(reading)
     before_rul = predict_rul(machine)
     before_energy = energy_analysis(machine)
 
-    # Model each action as a multiplicative reduction of sensor severities.
-    effects = {
-        "preventive_maintenance": {s: 0.35 for s in SENSORS},
-        "bearing_replacement": {"vibration": 0.2, "sound": 0.25, "temperature": 0.6},
-        "lubrication": {"temperature": 0.55, "vibration": 0.7, "sound": 0.6},
-        "cooling_service": {"temperature": 0.25, "current": 0.7, "power": 0.75},
-        "electrical_service": {"current": 0.3, "power": 0.55, "temperature": 0.7},
-        "no_action": {s: 1.0 for s in SENSORS},
-    }
-    factor = effects.get(action, {s: 0.5 for s in SENSORS})
+    factor = TWIN_EFFECTS[action]
 
     projected = {}
     for s, cfg in SENSORS.items():
@@ -325,7 +352,6 @@ def digital_twin(machine: Machine, action: str) -> dict:
     after_fail = max(0.02, before_rul["failure_probability"] * (1 - gain / 120.0))
 
     after_power = projected["power"]
-    ideal = RATED_POWER_KW * 0.72
     energy_saved_month = max(0.0, (before_energy.get("avg_power_kw", after_power) - after_power)) * 16 * 26 * 8.5
 
     return {
