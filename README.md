@@ -4,6 +4,8 @@
 *Predictive Maintenance · Digital Twin Simulation · Energy Optimization*
 *Smart India Hackathon 2026 · Software Edition*
 
+**Built by Saatwik Sairaam Vasamsetti** · [github.com/saatwik-1157](https://github.com/saatwik-1157)
+
 MachineSense AI is an Industry 4.0 platform that combines **IoT sensors**, **Explainable AI**,
 predictive maintenance, energy optimization and **digital-twin simulation** to help Indian
 industrial units — from small workshops to large plants — reduce downtime, maintenance cost
