@@ -51,7 +51,7 @@ Take it only if the team is genuinely strong on OCR — the PS demands >90% plat
 ### Lead choice — SIH26170 (Software · Smart Automation · ISRO)
 *AI-Driven Anomaly Detection in Component Burn-In & Screening*
 
-Highest fit-to-existing-code of anything in the 226. Their three deliverables are three things you have already written in `backend/ml.py`:
+Highest fit-to-existing-code of anything in the 226. Their three deliverables are three things you have already written in `apps/api/ml.py`:
 
 | ISRO asks for | You already have |
 |---|---|
