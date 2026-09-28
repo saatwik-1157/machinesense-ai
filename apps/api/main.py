@@ -4,8 +4,8 @@ MachineSense AI - FastAPI application
 Exposes the simulated fleet and AI engine as a REST API and serves the
 web dashboard. Run with:
 
-    uvicorn main:app --reload --port 8000
-    (or: python main.py)
+    uvicorn main:app --app-dir apps/api --reload --port 8000   (from the repo root)
+    (or: python apps/api/main.py)
 
 Then open http://localhost:8000
 """
@@ -28,8 +28,9 @@ import ml
 
 FLEET = Fleet()
 
-# Frontend lives one level up in ../frontend
-FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+# The dashboard lives in the sibling app: apps/api/main.py -> apps/web/.
+# Resolved from this file's location so it works from any working directory.
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 
 
 @asynccontextmanager
@@ -156,10 +157,16 @@ async def machine_detail(machine_id: str):
 @app.get("/api/machines/{machine_id}/history")
 async def machine_history(machine_id: str, n: int = Query(60, ge=1, le=240)):
     m = _get(machine_id)
-    hist = list(m.history)[-n:]
+    full = list(m.history)
+    hist = full[-n:]
     # Idle readings would score a fake 100: carry the last running health
     # forward through stopped stretches so the trend line stays honest.
+    # Seed it from before the window, in case the window opens mid-stop.
     points, last_health = [], None
+    for h in reversed(full[:len(full) - len(hist)]):
+        if h.get("running", True):
+            last_health = ml.health_score(h)
+            break
     for h in hist:
         if h.get("running", True):
             last_health = ml.health_score(h)
@@ -254,6 +261,9 @@ if os.path.isdir(FRONTEND_DIR):
         return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
     app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+else:
+    # Without this the API would start "fine" and / would just 404.
+    logging.warning("Dashboard not found at %s; serving the API only.", FRONTEND_DIR)
 
 
 if __name__ == "__main__":

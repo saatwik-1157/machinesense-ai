@@ -10,11 +10,11 @@ echo
 echo "  MachineSense AI - starting up..."
 echo
 
-python3 -m pip install -r backend/requirements.txt --quiet --disable-pip-version-check
+python3 -m pip install -r apps/api/requirements.txt --quiet --disable-pip-version-check
 
 echo
 echo "  Dashboard will be available at:  http://localhost:8000"
 echo "  Press Ctrl+C to stop."
 echo
 
-python3 -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000
+python3 -m uvicorn main:app --app-dir apps/api --host 127.0.0.1 --port 8000

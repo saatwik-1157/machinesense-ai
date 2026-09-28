@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  api:
+    name: API (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: apps/api/requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r apps/api/requirements-dev.txt
+
+      - name: Byte-compile
+        run: python -m py_compile apps/api/*.py apps/api/tests/*.py
+
+      - name: Tests
+        run: python -m pytest apps/api/tests -v
+
+  web:
+    name: Web (node --check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Syntax-check the dashboard scripts
+        run: for f in apps/web/*.js; do echo "$f"; node --check "$f"; done
