@@ -157,10 +157,16 @@ async def machine_detail(machine_id: str):
 @app.get("/api/machines/{machine_id}/history")
 async def machine_history(machine_id: str, n: int = Query(60, ge=1, le=240)):
     m = _get(machine_id)
-    hist = list(m.history)[-n:]
+    full = list(m.history)
+    hist = full[-n:]
     # Idle readings would score a fake 100: carry the last running health
     # forward through stopped stretches so the trend line stays honest.
+    # Seed it from before the window, in case the window opens mid-stop.
     points, last_health = [], None
+    for h in reversed(full[:len(full) - len(hist)]):
+        if h.get("running", True):
+            last_health = ml.health_score(h)
+            break
     for h in hist:
         if h.get("running", True):
             last_health = ml.health_score(h)
